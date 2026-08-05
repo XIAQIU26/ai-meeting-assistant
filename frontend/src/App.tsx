@@ -2,15 +2,18 @@ import { useEffect, useState } from 'react';
 import { Header } from './components/Header';
 import { Sidebar, type PageKey } from './components/Sidebar';
 import { AnalyticsPage } from './pages/AnalyticsPage';
+import { AuthPage } from './pages/AuthPage';
 import { ChatPage } from './pages/ChatPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { HistoryPage } from './pages/HistoryPage';
 import { PreparationPage } from './pages/PreparationPage';
 import { RecordPage } from './pages/RecordPage';
+import { AuthProvider, useAuth } from './services/authContext';
 import { createProject, deleteProject, fetchProjects, updateProject } from './services/api';
 import type { Project } from './types';
 
-export default function App() {
+function AppContent() {
+  const { user, loading } = useAuth();
   const [activePage, setActivePage] = useState<PageKey>(() => (localStorage.getItem('arm_active_page') as PageKey) || 'dashboard');
   const [projects, setProjects] = useState<Project[]>([]);
   const [currentProjectId, setCurrentProjectId] = useState(() => localStorage.getItem('arm_current_project') || '');
@@ -24,6 +27,7 @@ export default function App() {
   }, [currentProjectId]);
 
   useEffect(() => {
+    if (!user) return;
     fetchProjects().then((items) => {
       setProjects(items);
       setCurrentProjectId((current) => {
@@ -31,7 +35,19 @@ export default function App() {
         return items[0]?.id || '';
       });
     });
-  }, []);
+  }, [user]);
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50">
+        <div className="text-sm text-slate-500">加载中...</div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <AuthPage />;
+  }
 
   const currentProject = projects.find((project) => project.id === currentProjectId);
 
@@ -88,5 +104,13 @@ export default function App() {
         <main className="mx-auto max-w-6xl px-5 py-6">{renderPage()}</main>
       </div>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 }
