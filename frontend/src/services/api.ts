@@ -1,5 +1,5 @@
 import type { AnalyticsData, Meeting, PreparationData, Project, ResearchInsight, TaskStatus } from '../types';
-import { useAuth } from './authContext';
+import { getCurrentUser } from './authContext';
 import {
   createMeeting as localCreateMeeting,
   createProject as localCreateProject,
@@ -18,12 +18,7 @@ import { answerResearchQuestion, buildAnalytics, buildPreparation, buildResearch
 import { parseMeetingLocally } from './localParser';
 
 function useRemote(): boolean {
-  try {
-    const { user } = useAuth();
-    return !!user;
-  } catch {
-    return false;
-  }
+  return !!getCurrentUser();
 }
 
 async function callDb<T>(localFn: () => T | Promise<T>, remoteFn: () => T | Promise<T>): Promise<T> {
