@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Pencil, Trash2 } from 'lucide-react';
 import type { Project } from '../types';
+import { UserMenu } from './UserMenu';
 
 interface HeaderProps {
   projects: Project[];
@@ -121,9 +122,7 @@ export function Header({ projects, currentProject, onProjectChange, onProjectCre
             <button className="rounded-md border border-slate-200 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100" onClick={() => setEditing(false)}>取消</button>
           </div>
         )}
-        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-research-100 text-sm font-semibold text-research-700">
-          研
-        </div>
+        <UserMenu />
       </div>
     </header>
   );
