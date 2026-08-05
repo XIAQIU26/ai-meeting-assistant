@@ -12,6 +12,13 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
+// Module-level reference for non-React code to check auth state
+let currentUser: User | null = null;
+
+export function getCurrentUser(): User | null {
+  return currentUser;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -19,11 +26,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       setUser(data.user);
+      currentUser = data.user;
       setLoading(false);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
       setUser(session?.user ?? null);
+      currentUser = session?.user ?? null;
     });
 
     return () => subscription.unsubscribe();
@@ -36,7 +45,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       options: { data: { name: name || email.split('@')[0] } }
     });
     if (!error && name) {
-      await supabase.from('profiles').upsert({ id: (await supabase.auth.getUser()).data.user?.id, name });
+      const { data: { user: newUser } } = await supabase.auth.getUser();
+      if (newUser) {
+        await supabase.from('profiles').upsert({ id: newUser.id, name });
+      }
     }
     return { error: error?.message || null };
   }
