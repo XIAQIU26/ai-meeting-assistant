@@ -30,6 +30,7 @@ export interface Meeting {
   suggestions: string[];
   tasks: Task[];
   nextMeetingDate: string;
+  createdAt?: string;
 }
 
 export interface ResearchInsight {
