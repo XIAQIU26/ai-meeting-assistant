@@ -21,9 +21,19 @@ function useRemote(): boolean {
   return !!getCurrentUser();
 }
 
+// 当远程 Supabase 调用失败时，回退到本地数据库，避免按钮无响应/数据丢失
+let remoteFailed = false;
+
 async function callDb<T>(localFn: () => T | Promise<T>, remoteFn: () => T | Promise<T>): Promise<T> {
-  if (useRemote()) {
-    return remoteFn();
+  if (useRemote() && !remoteFailed) {
+    try {
+      const result = await remoteFn();
+      return result;
+    } catch (err) {
+      console.warn('Remote API failed, falling back to local:', err instanceof Error ? err.message : 'unknown');
+      remoteFailed = true;
+      return localFn();
+    }
   }
   return localFn();
 }
