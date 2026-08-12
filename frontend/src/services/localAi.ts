@@ -165,7 +165,7 @@ export function buildPreparation(meetings: Meeting[], project?: Project | null):
   const pending = meetings.flatMap((m) => m.tasks.filter((t) => t.status !== 'done'));
   return {
     nextMeetingDate: latest?.nextMeetingDate || '',
-    unresolved: pending.slice(0, 5).map((t) => t.content),
+    unresolved: pending.slice(0, 5).map((t) => t.content ?? ''),
     reportSuggestions: insight.nextActions.slice(0, 3),
     possibleQuestions: buildPossibleQuestions(insight)
   };
