@@ -24,9 +24,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let cancelled = false;
+    // 5 秒超时保护：无论 Supabase 是否响应，loading 都必须结束，避免页面卡死
+    const timeout = setTimeout(() => {
+      if (!cancelled) {
+        setLoading(false);
+        console.warn('Auth initialization timed out, proceeding without user');
+      }
+    }, 5000);
+
     supabase.auth.getUser().then(({ data }) => {
+      if (cancelled) return;
+      clearTimeout(timeout);
       setUser(data.user);
       currentUser = data.user;
+      setLoading(false);
+    }).catch((err) => {
+      if (cancelled) return;
+      clearTimeout(timeout);
+      console.warn('Auth initialization failed:', err instanceof Error ? err.message : 'unknown');
+      setUser(null);
+      currentUser = null;
       setLoading(false);
     });
 
@@ -35,7 +53,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       currentUser = session?.user ?? null;
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+      subscription.unsubscribe();
+    };
   }, []);
 
   async function signUp(email: string, password: string, name?: string) {
