@@ -21,16 +21,31 @@ function useRemote(): boolean {
   return !!getCurrentUser();
 }
 
-// 当远程 Supabase 调用失败时，回退到本地数据库，避免按钮无响应/数据丢失
+// 当远程 Supabase 连续失败时，后续请求直接走本地，避免每次都等超时
 let remoteFailed = false;
 
-async function callDb<T>(localFn: () => T | Promise<T>, remoteFn: () => T | Promise<T>): Promise<T> {
+// 判断远程返回结果是否为"空"（需要 fallback 到本地）
+function isEmptyResult(result: unknown): boolean {
+  if (result == null) return true;
+  if (Array.isArray(result) && result.length === 0) return true;
+  return false;
+}
+
+// 读取操作：远程优先，远程返回空或失败时 fallback 到本地
+async function callDbRead<T>(localFn: () => T | Promise<T>, remoteFn: () => T | Promise<T>): Promise<T> {
   if (useRemote() && !remoteFailed) {
     try {
       const result = await remoteFn();
+      // 远程返回空结果时，尝试从本地读取（防止数据丢失）
+      if (isEmptyResult(result)) {
+        const localResult = await localFn();
+        if (!isEmptyResult(localResult)) {
+          return localResult;
+        }
+      }
       return result;
     } catch (err) {
-      console.warn('Remote API failed, falling back to local:', err instanceof Error ? err.message : 'unknown');
+      console.warn('Remote read failed, falling back to local:', err instanceof Error ? err.message : 'unknown');
       remoteFailed = true;
       return localFn();
     }
@@ -38,26 +53,42 @@ async function callDb<T>(localFn: () => T | Promise<T>, remoteFn: () => T | Prom
   return localFn();
 }
 
+// 写入操作：先写本地（保证数据不丢），再写远程（同步）
+async function callDbWrite<T>(localFn: () => T | Promise<T>, remoteFn: () => T | Promise<T>): Promise<T> {
+  // 先写本地，确保数据始终有备份
+  const localResult = await localFn();
+  // 再写远程（失败不影响返回值，本地已有数据）
+  if (useRemote() && !remoteFailed) {
+    try {
+      await remoteFn();
+    } catch (err) {
+      console.warn('Remote write failed, local copy preserved:', err instanceof Error ? err.message : 'unknown');
+      remoteFailed = true;
+    }
+  }
+  return localResult;
+}
+
 export function fetchProjects(): Promise<Project[]> {
-  return callDb(localGetProjects, () => supabaseDb.getProjects());
+  return callDbRead(localGetProjects, () => supabaseDb.getProjects());
 }
 
 export function createProject(project: Omit<Project, 'id'>): Promise<Project> {
-  return callDb(
+  return callDbWrite(
     () => localCreateProject(project),
     () => supabaseDb.createProject(project)
   );
 }
 
 export function fetchMeetings(projectId: string, search = ''): Promise<Meeting[]> {
-  return callDb(
+  return callDbRead(
     () => localGetMeetings(search, projectId),
     () => supabaseDb.getMeetings(search, projectId)
   );
 }
 
 export function fetchMeeting(id: string): Promise<Meeting> {
-  return callDb(
+  return callDbRead(
     () => {
       const m = localGetMeetingById(id);
       if (!m) throw new Error('Meeting not found');
@@ -77,14 +108,14 @@ export function parseMeeting(text: string, projectId: string): Promise<Omit<Meet
 }
 
 export function saveMeeting(meeting: Omit<Meeting, 'id'>, projectId: string): Promise<Meeting> {
-  return callDb(
+  return callDbWrite(
     () => localCreateMeeting({ ...meeting, projectId }),
     () => supabaseDb.createMeeting({ ...meeting, projectId })
   );
 }
 
 export function updateMeeting(id: string, data: Partial<Omit<Meeting, 'id'>>): Promise<Meeting> {
-  return callDb(
+  return callDbWrite(
     () => {
       const updated = localUpdateMeeting(id, data);
       if (!updated) throw new Error('Meeting not found');
@@ -99,7 +130,7 @@ export function updateMeeting(id: string, data: Partial<Omit<Meeting, 'id'>>): P
 }
 
 export function deleteMeeting(id: string): Promise<{ message: string }> {
-  return callDb(
+  return callDbWrite(
     () => {
       const ok = localDeleteMeeting(id);
       if (!ok) throw new Error('Meeting not found');
@@ -114,7 +145,7 @@ export function deleteMeeting(id: string): Promise<{ message: string }> {
 }
 
 export function askAssistant(question: string, projectId: string): Promise<{ answer: string; contextSize: number }> {
-  return callDb(
+  return callDbRead(
     () => {
       const meetings = localGetMeetings('', projectId);
       const project = localGetProjectById(projectId);
@@ -131,7 +162,7 @@ export function askAssistant(question: string, projectId: string): Promise<{ ans
 }
 
 export function fetchAnalytics(projectId: string): Promise<AnalyticsData> {
-  return callDb(
+  return callDbRead(
     () => {
       const meetings = localGetMeetings('', projectId);
       const project = localGetProjectById(projectId);
@@ -146,7 +177,7 @@ export function fetchAnalytics(projectId: string): Promise<AnalyticsData> {
 }
 
 export function fetchPreparation(projectId: string): Promise<PreparationData> {
-  return callDb(
+  return callDbRead(
     () => {
       const meetings = localGetMeetings('', projectId);
       const project = localGetProjectById(projectId);
@@ -161,7 +192,7 @@ export function fetchPreparation(projectId: string): Promise<PreparationData> {
 }
 
 export function fetchInsight(projectId: string): Promise<ResearchInsight> {
-  return callDb(
+  return callDbRead(
     () => {
       const meetings = localGetMeetings('', projectId);
       const project = localGetProjectById(projectId);
@@ -176,7 +207,7 @@ export function fetchInsight(projectId: string): Promise<ResearchInsight> {
 }
 
 export function updateTaskStatus(id: string, status: TaskStatus): Promise<unknown> {
-  return callDb(
+  return callDbWrite(
     () => {
       const task = localUpdateTaskStatus(id, status);
       if (!task) throw new Error('Task not found');
@@ -191,7 +222,7 @@ export function updateTaskStatus(id: string, status: TaskStatus): Promise<unknow
 }
 
 export function updateProject(id: string, name: string): Promise<Project> {
-  return callDb(
+  return callDbWrite(
     () => {
       const updated = localUpdateProject(id, name);
       if (!updated) throw new Error('Project not found');
@@ -206,7 +237,7 @@ export function updateProject(id: string, name: string): Promise<Project> {
 }
 
 export function deleteProject(id: string): Promise<{ message: string }> {
-  return callDb(
+  return callDbWrite(
     () => {
       const ok = localDeleteProject(id);
       if (!ok) throw new Error('Project not found');
